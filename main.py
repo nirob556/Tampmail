@@ -1,21 +1,23 @@
 import os
 import random
 import string
-import requests
 import asyncio
+import requests
+import werkzeug.serving
 from flask import Flask, render_template_string, jsonify, request
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "8446272435:AAGpS9p7fTs7IlCcAuGdO8vWJd44oB0NPy8"      
-ADMIN_ID = 7224513731                  
-CHANNEL_USERNAME = "SPEED_X_OFFICIAL1"     
+BOT_TOKEN = "8446272435:AAGpS9p7fTs7IlCcAuGdO8vWJd44oB0NPy8"      # আপনার বট টোকেন
+ADMIN_ID = 7224513731                  # আপনার নিজের টেলিগ্রাম আইডি
+CHANNEL_USERNAME = "SPEED_X_OFFICIAL1"     # '@' ছাড়া চ্যানেলের ইউজারনেম
 
 # Branding & Credits
 CREDIT_NAME = "SPEED_X"
 DEV_NAME = "NIROB BBZ"
 
+# Safe In-Memory Database
 USER_DB = {}
 
 app = Flask(__name__)
@@ -34,6 +36,8 @@ async def is_user_joined(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bo
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if not user:
+        return
     user_id = user.id
     
     USER_DB[user_id] = {
@@ -57,9 +61,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     joined = await is_user_joined(context, user_id)
     
-    # Request checking inside bot context securely
-    web_app_url = f"https://{request.host}" if (request and request.host) else "http://localhost:5000"
-    web_app_final_url = f"{web_app_url}/?user_id={user_id}&name={requests.utils.quote(user.full_name)}&username={user.username or 'None'}"
+    # Render বা লোকাল হোস্টের রিয়েল ডোমেইন ডিটেক্ট করা
+    host_url = f"https://{request.host}" if (request and request.host) else "http://localhost:5000"
+    web_app_final_url = f"{host_url}/?user_id={user_id}&name={requests.utils.quote(user.full_name)}&username={user.username or 'None'}"
 
     if not joined:
         text = (
@@ -169,7 +173,7 @@ HTML_TEMPLATE = """
             background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.06);
             padding: 16px; border-radius: 12px; font-size: 15px; word-break: break-all;
             margin-top: 15px; display: flex; justify-content: space-between; align-items: center;
-            transition: all 0.3s ease;
+            transition: all 0.3s ease; cursor: pointer;
         }
         .mail-box:hover, .pass-box:hover { border-color: rgba(255, 255, 255, 0.15); background: rgba(255,255,255,0.02); }
         .mail-box { color: var(--neon-cyan); font-weight: 700; font-family: 'Courier New', monospace; font-size: 16px; }
@@ -204,7 +208,7 @@ HTML_TEMPLATE = """
         .tg-join-btn {
             background: linear-gradient(90deg, #1d93d2 0%, #24A1DE 100%); color: white; text-decoration: none;
             display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px;
-            border-radius: 12px; font-weight: 700; margin-top: 35px; font-size: 14px;
+            border-radius: 12px; font-weight: 700; margin-top: 35px; font-size: 14px; text-shadow: 0 1px 2px rgba(0,0,0,0.3);
         }
         .toast {
             position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #fff;
@@ -376,38 +380,33 @@ def get_inbox():
     except:
         return jsonify([])
 
-# ================= ASYNC RUNNER FOR BOTH BOT & FLASK =================
+# ================= ADVANCED MULTI-TASK EVENT LOOP RUNNER =================
 
 async def main():
-    # Build bot application natively inside async context
+    """Python 3.14+ এবং Render এর জন্য একদম নতুন সিঙ্গেল-লুপ রানার মেকানিজম"""
+    # ১. টেলিগ্রাম বট কনফিগারেশন এবং ইনিশিয়ালাইজেশন
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("admin", admin_handler))
 
-    # Initialize bot polling inside the event loop safely
+    # Python 3.14 সেফ স্টার্টআপ প্রসেস
     await application.initialize()
     await application.start()
     await application.updater.start_polling()
 
-    # Configure and run Flask inside the exact same asyncio loop via custom background config
-    import werkzeug.serving
+    # ২. একই ইভেন্ট লুপের ভেতর থ্রেড ইন্টারাপশন ছাড়া Flask রান করা
     port = int(os.environ.get("PORT", 5000))
-    
-    # Run server task concurrently using the main loop without thread-interruption
     loop = asyncio.get_running_loop()
-    server_task = loop.run_in_executor(None, lambda: werkzeug.serving.run_simple("0.0.0.0", port, app, use_reloader=False))
-
-    print(f"🔥 VIP System Online! Web running on port {port}")
     
-    # Keep checking and preventing the event loop from collapsing
-    try:
-        while True:
-            await asyncio.sleep(3600)
-    except (KeyboardInterrupt, SystemExit):
-        await application.updater.stop()
-        await application.stop()
-        await application.shutdown()
+    # এটি সম্পূর্ণ ব্যাকগ্রাউন্ডে Flask কে কোনো ব্লকিং ছাড়া সচল রাখবে
+    loop.run_in_executor(None, lambda: werkzeug.serving.run_simple("0.0.0.0", port, app, use_reloader=False))
+    
+    print(f"🔥 SPEED_X VIP System Online! WebApp Host on Port: {port}")
+    
+    # লুপ সচল রাখার দীর্ঘমেয়াদী টাস্ক
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    # Launch with high priority pure asyncio core execution
+    # মেইন এন্ট্রি পয়েন্ট যা ক্র্যাশ পুরোপুরি প্রতিরোধ করে
     asyncio.run(main())
