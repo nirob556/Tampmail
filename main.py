@@ -5,19 +5,25 @@ import asyncio
 import requests
 import werkzeug.serving
 from flask import Flask, render_template_string, jsonify, request
+
+# ================= PYTHON 3.14 BUG PATCH (STRICTLY REQUIRED FOR RENDER) =================
+# এই কোডটুকু Python 3.14 এর ইন্টারনাল AttributeError পুরোপুরি ভ্যানিশ করে দেবে
+import telegram.ext
+if not hasattr(telegram.ext.Updater, '_Updater__polling_cleanup_cb'):
+    setattr(telegram.ext.Updater, '_Updater__polling_cleanup_cb', None)
+
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "8446272435:AAGpS9p7fTs7IlCcAuGdO8vWJd44oB0NPy8"      # আপনার বট টোকেন
-ADMIN_ID = 7224513731                  # আপনার নিজের টেলিগ্রাম আইডি
-CHANNEL_USERNAME = "SPEED_X_OFFICIAL1"     # '@' ছাড়া চ্যানেলের ইউজারনেম
+BOT_TOKEN = "8446272435:AAGpS9p7fTs7IlCcAuGdO8vWJd44oB0NPy8"      
+ADMIN_ID = 7224513731                  
+CHANNEL_USERNAME = "SPEED_X_OFFICIAL1"     
 
 # Branding & Credits
 CREDIT_NAME = "SPEED_X"
 DEV_NAME = "NIROB BBZ"
 
-# Safe In-Memory Database
 USER_DB = {}
 
 app = Flask(__name__)
@@ -61,7 +67,6 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     joined = await is_user_joined(context, user_id)
     
-    # Render বা লোকাল হোস্টের রিয়েল ডোমেইন ডিটেক্ট করা
     host_url = f"https://{request.host}" if (request and request.host) else "http://localhost:5000"
     web_app_final_url = f"{host_url}/?user_id={user_id}&name={requests.utils.quote(user.full_name)}&username={user.username or 'None'}"
 
@@ -140,7 +145,6 @@ HTML_TEMPLATE = """
         #particles-js { position: fixed; width: 100%; height: 100%; z-index: -1; }
         .container { max-width: 500px; margin: 0 auto; padding: 20px 15px; box-sizing: border-box; }
         
-        /* Glassmorphism VIP Card */
         .vip-card {
             background: var(--glass-bg);
             border: 1px solid var(--border-glass);
@@ -158,7 +162,6 @@ HTML_TEMPLATE = """
         }
         .vip-subtitle { font-size: 11px; color: var(--neon-cyan); font-weight: bold; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 25px; }
         
-        /* Profile Layout */
         .profile-sec {
             display: flex; align-items: center; gap: 15px;
             background: rgba(255, 255, 255, 0.03); padding: 12px 18px;
@@ -188,7 +191,6 @@ HTML_TEMPLATE = """
         }
         .btn-vip:hover { box-shadow: 0 0 25px rgba(255, 0, 85, 0.6); transform: translateY(-1px); }
         
-        /* Premium Inbox */
         .inbox-title { text-align: left; font-size: 16px; font-weight: 800; border-left: 4px solid var(--neon-pink); padding-left: 12px; margin: 30px 0 15px 0; text-transform: uppercase; letter-spacing: 1px; }
         .email-list { display: flex; flex-direction: column; gap: 12px; }
         .email-item {
@@ -380,33 +382,31 @@ def get_inbox():
     except:
         return jsonify([])
 
-# ================= ADVANCED MULTI-TASK EVENT LOOP RUNNER =================
+# ================= FIXED SINGLE EVENT-LOOP RUNNER =================
 
 async def main():
-    """Python 3.14+ এবং Render এর জন্য একদম নতুন সিঙ্গেল-লুপ রানার মেকানিজম"""
-    # ১. টেলিগ্রাম বট কনফিগারেশন এবং ইনিশিয়ালাইজেশন
+    # ১. টেলিগ্রাম বট কনফিগারেশন
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("admin", admin_handler))
 
-    # Python 3.14 সেফ স্টার্টআপ প্রসেস
+    # Python 3.14-এর অবজেক্ট হ্যান্ডলিং বাগ বাইপাস করে মেমোরিতে সরাসরি লোড করা
     await application.initialize()
     await application.start()
     await application.updater.start_polling()
 
-    # ২. একই ইভেন্ট লুপের ভেতর থ্রেড ইন্টারাপশন ছাড়া Flask রান করা
+    # ২. একই টাস্ক লুপের ভেতর থ্রেড ব্লকিং ছাড়া Flask সার্ভিস চালানো
     port = int(os.environ.get("PORT", 5000))
     loop = asyncio.get_running_loop()
     
-    # এটি সম্পূর্ণ ব্যাকগ্রাউন্ডে Flask কে কোনো ব্লকিং ছাড়া সচল রাখবে
+    # এটি ব্যাকগ্রাউন্ডে Flask কে রান করে রাখবে, ফলে বট ও ওয়েবসাইট দুটোই একই সাথে কাজ করবে
     loop.run_in_executor(None, lambda: werkzeug.serving.run_simple("0.0.0.0", port, app, use_reloader=False))
     
-    print(f"🔥 SPEED_X VIP System Online! WebApp Host on Port: {port}")
+    print(f"🔥 SPEED_X VIP System Bypass Online! WebApp Host on Port: {port}")
     
-    # লুপ সচল রাখার দীর্ঘমেয়াদী টাস্ক
+    # ইভেন্ট লুপ সচল রাখার কন্টিনিউয়াস টাস্ক
     while True:
         await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    # মেইন এন্ট্রি পয়েন্ট যা ক্র্যাশ পুরোপুরি প্রতিরোধ করে
     asyncio.run(main())
