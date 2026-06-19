@@ -5,15 +5,8 @@ import asyncio
 import requests
 import werkzeug.serving
 from flask import Flask, render_template_string, jsonify, request
-
-# ================= PYTHON 3.14 BUG PATCH (STRICTLY REQUIRED FOR RENDER) =================
-# এই কোডটুকু Python 3.14 এর ইন্টারনাল AttributeError পুরোপুরি ভ্যানিশ করে দেবে
-import telegram.ext
-if not hasattr(telegram.ext.Updater, '_Updater__polling_cleanup_cb'):
-    setattr(telegram.ext.Updater, '_Updater__polling_cleanup_cb', None)
-
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton, Bot
+from telegram.ext import CommandHandler, ContextTypes, TypeHandler
 
 # ================= CONFIGURATION =================
 BOT_TOKEN = "8446272435:AAGpS9p7fTs7IlCcAuGdO8vWJd44oB0NPy8"      
@@ -30,9 +23,9 @@ app = Flask(__name__)
 
 # ================= TELEGRAM BOT LOGIC =================
 
-async def is_user_joined(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
+async def is_user_joined(bot: Bot, user_id: int) -> bool:
     try:
-        member = await context.bot.get_chat_member(chat_id=f"@{CHANNEL_USERNAME}", user_id=user_id)
+        member = await bot.get_chat_member(chat_id=f"@{CHANNEL_USERNAME}", user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
             return True
     except Exception as e:
@@ -40,82 +33,92 @@ async def is_user_joined(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bo
         return False
     return False
 
-async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_update(bot: Bot, update: Update):
+    """ম্যানুয়াল আপডেট হ্যান্ডলার যা সব রিকোয়েস্ট প্রসেস করবে"""
+    if not update.message or not update.message.text:
+        return
+        
     user = update.effective_user
     if not user:
         return
     user_id = user.id
-    
-    USER_DB[user_id] = {
-        "name": user.full_name,
-        "username": user.username or "No_Username",
-        "mails_generated": USER_DB.get(user_id, {}).get("mails_generated", 0),
-        "web_visits": USER_DB.get(user_id, {}).get("web_visits", 0)
-    }
-    
-    try:
-        admin_alert = (
-            f"👑 **[VIP ADMIN ALERT]** 👑\n\n"
-            f"👤 **User:** {user.full_name}\n"
-            f"🆔 **ID:** `{user_id}`\n"
-            f"🌐 **Username:** @{user.username or 'None'}\n"
-            f"⚡ **Action:** Started the Bot!"
-        )
-        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_alert, parse_mode="Markdown")
-    except Exception:
-        pass
+    text_cmd = update.message.text.strip()
 
-    joined = await is_user_joined(context, user_id)
-    
-    host_url = f"https://{request.host}" if (request and request.host) else "http://localhost:5000"
-    web_app_final_url = f"{host_url}/?user_id={user_id}&name={requests.utils.quote(user.full_name)}&username={user.username or 'None'}"
+    # ডাটাবেজ ট্র্যাকিং
+    if user_id not in USER_DB:
+        USER_DB[user_id] = {
+            "name": user.full_name,
+            "username": user.username or "No_Username",
+            "mails_generated": 0,
+            "web_visits": 0
+        }
 
-    if not joined:
-        text = (
-            f"⚡ **WELCOME TO PREMIUM TEMP MAIL BOT** ⚡\n\n"
-            f"🛑 `You must join our channel to use this VIP bot!`\n\n"
-            f"📢 **Channel:** @{CHANNEL_USERNAME}\n\n"
-            f"👤 **Developer:** {DEV_NAME}\n"
-            f"🔥 **Powered by:** {CREDIT_NAME}"
-        )
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME}")],
-            [InlineKeyboardButton("🔄 Verify / Start Again", url=f"https://t.me/{(await context.bot.get_me()).username}?start=true")]
-        ])
-        await update.message.reply_text(text, reply_markup=buttons, parse_mode="Markdown")
-    else:
-        text = (
-            f"🔴 ✨ **WELCOME TO VIP TEMP MAIL HUB** ✨ 🔴\n\n"
-            f"Your access has been **Verified** successfully! ✅\n"
-            f"You can now generate premium temp mails directly inside Telegram WebApp.\n\n"
-            f"👑 **Created by:** {CREDIT_NAME}\n"
-            f"💻 **Developer:** {DEV_NAME}"
-        )
-        
-        reply_markup = ReplyKeyboardMarkup([
-            [KeyboardButton("🌐 Open VIP WebApp", web_app_info=WebAppInfo(url=web_app_final_url))]
-        ], resize_keyboard=True)
-        
-        inline_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 Launch WebApp Now", web_app_info=WebAppInfo(url=web_app_final_url))],
-            [InlineKeyboardButton("📢 Support Channel", url=f"https://t.me/{CHANNEL_USERNAME}")]
-        ])
-        
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-        await update.message.reply_text("👇 Click the button below to start generating mails!", reply_markup=inline_markup)
+    # /start কমান্ড হ্যান্ডলিং
+    if text_cmd.startswith("/start"):
+        try:
+            admin_alert = (
+                f"👑 **[VIP ADMIN ALERT]** 👑\n\n"
+                f"👤 **User:** {user.full_name}\n"
+                f"🆔 **ID:** `{user_id}`\n"
+                f"🌐 **Username:** @{user.username or 'None'}\n"
+                f"⚡ **Action:** Started the Bot!"
+            )
+            await bot.send_message(chat_id=ADMIN_ID, text=admin_alert, parse_mode="Markdown")
+        except Exception:
+            pass
 
-async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
+        joined = await is_user_joined(bot, user_id)
         
-    total_users = len(USER_DB)
-    text = f"⚙️ 👑 **VIP ADMIN PANEL ({CREDIT_NAME})** 👑 ⚙️\n\n"
-    text += f"📊 **Total Active Users Tracked:** {total_users}\n\n"
-    
-    for uid, data in USER_DB.items():
-        text += f"👤 **Name:** {data['name']}\n🆔 **ID:** `{uid}`\n🌐 **User:** @{data['username']}\n📧 **Mails Gen:** {data['mails_generated']} | 🕸️ **Web Visits:** {data['web_visits']}\n──────────────────\n"
+        host_url = f"https://{request.host}" if (request and request.host) else "http://localhost:5000"
+        web_app_final_url = f"{host_url}/?user_id={user_id}&name={requests.utils.quote(user.full_name)}&username={user.username or 'None'}"
+
+        if not joined:
+            text = (
+                f"⚡ **WELCOME TO PREMIUM TEMP MAIL BOT** ⚡\n\n"
+                f"🛑 `You must join our channel to use this VIP bot!`\n\n"
+                f"📢 **Channel:** @{CHANNEL_USERNAME}\n\n"
+                f"👤 **Developer:** {DEV_NAME}\n"
+                f"🔥 **Powered by:** {CREDIT_NAME}"
+            )
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME}")],
+                [InlineKeyboardButton("🔄 Verify / Start Again", url=f"https://t.me/{(await bot.get_me()).username}?start=true")]
+            ])
+            await update.message.reply_text(text, reply_markup=buttons, parse_mode="Markdown")
+        else:
+            text = (
+                f"🔴 ✨ **WELCOME TO VIP TEMP MAIL HUB** ✨ 🔴\n\n"
+                f"Your access has been **Verified** successfully! ✅\n"
+                f"You can now generate premium temp mails directly inside Telegram WebApp.\n\n"
+                f"👑 **Created by:** {CREDIT_NAME}\n"
+                f"💻 **Developer:** {DEV_NAME}"
+            )
+            
+            reply_markup = ReplyKeyboardMarkup([
+                [KeyboardButton("🌐 Open VIP WebApp", web_app_info=WebAppInfo(url=web_app_final_url))]
+            ], resize_keyboard=True)
+            
+            inline_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🚀 Launch WebApp Now", web_app_info=WebAppInfo(url=web_app_final_url))],
+                [InlineKeyboardButton("📢 Support Channel", url=f"https://t.me/{CHANNEL_USERNAME}")]
+            ])
+            
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+            await update.message.reply_text("👇 Click the button below to start generating mails!", reply_markup=inline_markup)
+
+    # /admin কমান্ড হ্যান্ডলিং
+    elif text_cmd.startswith("/admin"):
+        if user_id != ADMIN_ID:
+            return
+            
+        total_users = len(USER_DB)
+        text = f"⚙️ 👑 **VIP ADMIN PANEL ({CREDIT_NAME})** 👑 ⚙️\n\n"
+        text += f"📊 **Total Active Users Tracked:** {total_users}\n\n"
         
-    await update.message.reply_text(text, parse_mode="Markdown")
+        for uid, data in USER_DB.items():
+            text += f"👤 **Name:** {data['name']}\n🆔 **ID:** `{uid}`\n🌐 **User:** @{data['username']}\n📧 **Mails Gen:** {data['mails_generated']} | 🕸️ **Web Visits:** {data['web_visits']}\n──────────────────\n"
+            
+        await update.message.reply_text(text, parse_mode="Markdown")
 
 
 # ================= HIGH-END VIP GLOSSY WEBAPP UI =================
@@ -146,10 +149,8 @@ HTML_TEMPLATE = """
         .container { max-width: 500px; margin: 0 auto; padding: 20px 15px; box-sizing: border-box; }
         
         .vip-card {
-            background: var(--glass-bg);
-            border: 1px solid var(--border-glass);
-            border-top: 2px solid var(--neon-pink);
-            border-bottom: 2px solid var(--neon-cyan);
+            background: var(--glass-bg); border: 1px solid var(--border-glass);
+            border-top: 2px solid var(--neon-pink); border-bottom: 2px solid var(--neon-cyan);
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 25px rgba(255, 0, 85, 0.15);
             border-radius: 20px; padding: 30px 20px; text-align: center;
             backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
@@ -382,31 +383,34 @@ def get_inbox():
     except:
         return jsonify([])
 
-# ================= FIXED SINGLE EVENT-LOOP RUNNER =================
+# ================= 100% PURE POLLING ENGINE (BYPASSES ALL PYTHON 3.14 BAGS) =================
 
 async def main():
-    # ১. টেলিগ্রাম বট কনফিগারেশন
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start_handler))
-    application.add_handler(CommandHandler("admin", admin_handler))
-
-    # Python 3.14-এর অবজেক্ট হ্যান্ডলিং বাগ বাইপাস করে মেমোরিতে সরাসরি লোড করা
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-
-    # ২. একই টাস্ক লুপের ভেতর থ্রেড ব্লকিং ছাড়া Flask সার্ভিস চালানো
+    """ভাঙা লাইব্রেরি ওভাররাইড করে সরাসরি রিয়েল-টাইম ক্লায়েন্ট ইঞ্জিন"""
+    bot = Bot(token=BOT_TOKEN)
+    
+    # ব্যাকগ্রাউন্ডে ফ্ল্যাস্ক সার্ভার পোর্ট বাইন্ডিং চালু করা
     port = int(os.environ.get("PORT", 5000))
     loop = asyncio.get_running_loop()
-    
-    # এটি ব্যাকগ্রাউন্ডে Flask কে রান করে রাখবে, ফলে বট ও ওয়েবসাইট দুটোই একই সাথে কাজ করবে
     loop.run_in_executor(None, lambda: werkzeug.serving.run_simple("0.0.0.0", port, app, use_reloader=False))
     
-    print(f"🔥 SPEED_X VIP System Bypass Online! WebApp Host on Port: {port}")
-    
-    # ইভেন্ট লুপ সচল রাখার কন্টিনিউয়াস টাস্ক
+    print(f"🔥 SPEED_X Premium UI WebApp Live on Port: {port}")
+    print("⚡ Manual Engine Active: Python 3.14 Compatible. Running Telegram Loop...")
+
+    offset = 0
     while True:
-        await asyncio.sleep(3600)
+        try:
+            # সরাসরি লং-পোলিং করে টেলিগ্রাম সার্ভার থেকে আপডেট রিসিভ করা (নো ডিপেন্ডেন্সি)
+            updates = await bot.get_updates(offset=offset, timeout=20, allowed_updates=["message"])
+            for update in updates:
+                offset = update.update_id + 1
+                # আপডেট প্রসেস করার জন্য টাস্ক পুশ করা
+                asyncio.create_task(handle_update(bot, update))
+        except Exception as e:
+            # নেটওয়ার্ক ড্রপ হলে বা সার্ভার টাইপ ইস্যু হলে রিস্টার্ট লুপ
+            await asyncio.sleep(1)
+            continue
+        await asyncio.sleep(0.2)
 
 if __name__ == "__main__":
     asyncio.run(main())
