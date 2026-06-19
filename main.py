@@ -1,30 +1,27 @@
 import os
 import random
 import string
-import json
-from threading import Thread
 import requests
+import asyncio
 from flask import Flask, render_template_string, jsonify, request
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "8446272435:AAGpS9p7fTs7IlCcAuGdO8vWJd44oB0NPy8"      # আপনার বট টোকেন দিন
-ADMIN_ID = 7224513731                  # আপনার নিজের টেলিগ্রাম আইডি (숫자) দিন
-CHANNEL_USERNAME = "SPEED_X_OFFICIAL1"     # '@' ছাড়া আপনার চ্যানেলের ইউজারনেম দিন
+BOT_TOKEN = "8446272435:AAGpS9p7fTs7IlCcAuGdO8vWJd44oB0NPy8"      
+ADMIN_ID = 7224513731                  
+CHANNEL_USERNAME = "SPEED_X_OFFICIAL1"     
 
 # Branding & Credits
 CREDIT_NAME = "SPEED_X"
 DEV_NAME = "NIROB BBZ"
 
-# Simple Database to track users (In-Memory for easy deployment)
 USER_DB = {}
 
 app = Flask(__name__)
 
 # ================= TELEGRAM BOT LOGIC =================
 
-# Channel Join Checker
 async def is_user_joined(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
     try:
         member = await context.bot.get_chat_member(chat_id=f"@{CHANNEL_USERNAME}", user_id=user_id)
@@ -35,12 +32,10 @@ async def is_user_joined(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bo
         return False
     return False
 
-# Start Handler
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    # Track user info
     USER_DB[user_id] = {
         "name": user.full_name,
         "username": user.username or "No_Username",
@@ -48,7 +43,6 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "web_visits": USER_DB.get(user_id, {}).get("web_visits", 0)
     }
     
-    # Notify Admin about new/active user activity (VIP Admin Alert)
     try:
         admin_alert = (
             f"👑 **[VIP ADMIN ALERT]** 👑\n\n"
@@ -63,10 +57,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     joined = await is_user_joined(context, user_id)
     
-    # Dynamic WebApp URL detection for Render/Localhost
-    web_app_url = request.host_url if request else "http://localhost:5000/"
-    # Appending user metadata to URL safely for WebApp Preview
-    web_app_final_url = f"{web_app_url}?user_id={user_id}&name={requests.utils.quote(user.full_name)}&username={user.username or 'None'}"
+    # Request checking inside bot context securely
+    web_app_url = f"https://{request.host}" if (request and request.host) else "http://localhost:5000"
+    web_app_final_url = f"{web_app_url}/?user_id={user_id}&name={requests.utils.quote(user.full_name)}&username={user.username or 'None'}"
 
     if not joined:
         text = (
@@ -90,12 +83,10 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💻 **Developer:** {DEV_NAME}"
         )
         
-        # Bottom corner / persistent Keyboard WebApp Menu Button
         reply_markup = ReplyKeyboardMarkup([
             [KeyboardButton("🌐 Open VIP WebApp", web_app_info=WebAppInfo(url=web_app_final_url))]
         ], resize_keyboard=True)
         
-        # Inline Button under the message
         inline_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("🚀 Launch WebApp Now", web_app_info=WebAppInfo(url=web_app_final_url))],
             [InlineKeyboardButton("📢 Support Channel", url=f"https://t.me/{CHANNEL_USERNAME}")]
@@ -104,7 +95,6 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         await update.message.reply_text("👇 Click the button below to start generating mails!", reply_markup=inline_markup)
 
-# Admin Panel Command
 async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -119,7 +109,7 @@ async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
-# ================= FLASK WEBAPP & UI =================
+# ================= HIGH-END VIP GLOSSY WEBAPP UI =================
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -127,66 +117,100 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VIP Temp Mail Hub</title>
+    <title>VIP Premium Mail Hub</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
     <style>
         :root {
-            --neon-red: #ff0055;
-            --neon-blue: #00ffff;
-            --bg-dark: #0a0a0c;
-            --card-bg: rgba(20, 20, 25, 0.85);
+            --neon-pink: #ff0055;
+            --neon-cyan: #00ffff;
+            --glass-bg: rgba(10, 10, 15, 0.75);
+            --border-glass: rgba(255, 255, 255, 0.08);
         }
         body {
             margin: 0; padding: 0;
-            font-family: 'Segoe UI', sans-serif;
-            background-color: var(--bg-dark); color: #ffffff;
-            overflow-x: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #050508 0%, #0c0d14 100%);
+            color: #ffffff; overflow-x: hidden;
         }
         #particles-js { position: fixed; width: 100%; height: 100%; z-index: -1; }
-        .container { max-width: 600px; margin: 20px auto; padding: 15px; box-sizing: border-box; }
+        .container { max-width: 500px; margin: 0 auto; padding: 20px 15px; box-sizing: border-box; }
+        
+        /* Glassmorphism VIP Card */
         .vip-card {
-            background: var(--card-bg); border: 2px solid var(--neon-red);
-            box-shadow: 0 0 20px rgba(255, 0, 85, 0.3); border-radius: 15px;
-            padding: 25px; text-align: center; backdrop-filter: blur(10px); margin-bottom: 20px;
+            background: var(--glass-bg);
+            border: 1px solid var(--border-glass);
+            border-top: 2px solid var(--neon-pink);
+            border-bottom: 2px solid var(--neon-cyan);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 25px rgba(255, 0, 85, 0.15);
+            border-radius: 20px; padding: 30px 20px; text-align: center;
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            margin-bottom: 25px; position: relative;
         }
         .vip-title {
-            font-size: 24px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px;
-            text-shadow: 0 0 10px var(--neon-red), 0 0 20px var(--neon-red); margin-bottom: 5px;
+            font-size: 26px; font-weight: 900; letter-spacing: 3px;
+            background: linear-gradient(to right, #fff, #ff80aa); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 15px rgba(255, 0, 85, 0.6); margin-bottom: 5px;
         }
-        .vip-subtitle { font-size: 11px; color: var(--neon-blue); text-transform: uppercase; letter-spacing: 3px; margin-bottom: 20px; }
+        .vip-subtitle { font-size: 11px; color: var(--neon-cyan); font-weight: bold; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 25px; }
+        
+        /* Profile Layout */
         .profile-sec {
-            display: flex; align-items: center; justify-content: center; gap: 15px;
-            background: rgba(255,255,255,0.05); padding: 10px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid var(--neon-blue);
+            display: flex; align-items: center; gap: 15px;
+            background: rgba(255, 255, 255, 0.03); padding: 12px 18px;
+            border-radius: 14px; margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.05);
         }
-        .profile-img { width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--neon-blue); }
+        .profile-img { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--neon-cyan); box-shadow: 0 0 10px rgba(0,255,255,0.2); }
         .profile-info { text-align: left; }
-        .profile-info h4 { margin: 0; color: #fff; }
-        .profile-info p { margin: 0; font-size: 12px; color: #aaa; }
+        .profile-info h4 { margin: 0; color: #fff; font-size: 15px; font-weight: 700; }
+        .profile-info p { margin: 3px 0 0 0; font-size: 11px; color: #8a8d98; }
+        
         .mail-box, .pass-box {
-            background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1);
-            padding: 14px; border-radius: 8px; font-size: 15px; word-break: break-all;
-            margin-top: 15px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+            background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 16px; border-radius: 12px; font-size: 15px; word-break: break-all;
+            margin-top: 15px; display: flex; justify-content: space-between; align-items: center;
+            transition: all 0.3s ease;
         }
-        .mail-box { color: var(--neon-blue); font-weight: bold; }
-        .pass-box { color: #ffcc00; font-size: 14px; margin-top: 10px; }
+        .mail-box:hover, .pass-box:hover { border-color: rgba(255, 255, 255, 0.15); background: rgba(255,255,255,0.02); }
+        .mail-box { color: var(--neon-cyan); font-weight: 700; font-family: 'Courier New', monospace; font-size: 16px; }
+        .pass-box { color: #ffcc00; font-size: 14px; margin-top: 12px; }
+        .copy-badge { font-size: 10px; background: rgba(255,255,255,0.08); padding: 4px 8px; border-radius: 6px; color: #aaa; letter-spacing: 1px; }
+
         .btn-vip {
-            background: linear-gradient(45deg, var(--neon-red), #b3003b); color: white;
-            border: none; padding: 12px 25px; font-size: 14px; font-weight: bold;
-            text-transform: uppercase; border-radius: 8px; cursor: pointer;
-            box-shadow: 0 0 15px rgba(255, 0, 85, 0.4); transition: 0.3s; width: 100%; margin-top: 15px;
+            background: linear-gradient(90deg, var(--neon-pink) 0%, #cc0044 100%); color: white;
+            border: none; padding: 15px; font-size: 14px; font-weight: 800;
+            text-transform: uppercase; border-radius: 12px; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 0, 85, 0.3); transition: all 0.3s ease; width: 100%; margin-top: 10px;
         }
-        .btn-vip:hover { box-shadow: 0 0 25px rgba(255, 0, 85, 0.8); transform: scale(1.01); }
-        .inbox-title { text-align: left; font-size: 18px; border-left: 4px solid var(--neon-red); padding-left: 10px; margin: 25px 0 15px 0; text-transform: uppercase; }
-        .email-list { display: flex; flex-direction: column; gap: 10px; }
-        .email-item { background: var(--card-bg); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: left; cursor: pointer; }
-        .email-item:hover { border-color: var(--neon-blue); background: rgba(0, 255, 255, 0.05); }
-        .email-meta { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-bottom: 5px; }
-        .email-sender { font-weight: bold; color: var(--neon-blue); }
-        .email-subject { font-size: 14px; font-weight: 500; }
-        .email-body { margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.4); border-radius: 5px; font-size: 13px; color: #ddd; display: none; white-space: pre-wrap; border-top: 1px solid rgba(255,255,255,0.05); }
-        .tg-join-btn { background: #24A1DE; color: white; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px; border-radius: 8px; font-weight: bold; margin-top: 30px; box-shadow: 0 0 10px rgba(36, 161, 222, 0.4); }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--neon-blue); color: #000; padding: 8px 20px; border-radius: 20px; font-weight: bold; font-size: 13px; display: none; z-index: 999; box-shadow: 0 0 15px var(--neon-blue); }
+        .btn-vip:hover { box-shadow: 0 0 25px rgba(255, 0, 85, 0.6); transform: translateY(-1px); }
+        
+        /* Premium Inbox */
+        .inbox-title { text-align: left; font-size: 16px; font-weight: 800; border-left: 4px solid var(--neon-pink); padding-left: 12px; margin: 30px 0 15px 0; text-transform: uppercase; letter-spacing: 1px; }
+        .email-list { display: flex; flex-direction: column; gap: 12px; }
+        .email-item {
+            background: var(--glass-bg); border: 1px solid var(--border-glass); border-radius: 14px;
+            padding: 16px; text-align: left; transition: all 0.2s ease; backdrop-filter: blur(10px);
+        }
+        .email-item:hover { border-color: var(--neon-cyan); box-shadow: 0 0 15px rgba(0, 255, 255, 0.08); }
+        .email-meta { display: flex; justify-content: space-between; font-size: 11px; color: #71747c; margin-bottom: 6px; }
+        .email-sender { font-weight: 700; color: var(--neon-cyan); }
+        .email-subject { font-size: 14px; font-weight: 600; color: #f1f1f3; }
+        .email-body {
+            margin-top: 12px; padding: 12px; background: rgba(0, 0, 0, 0.5); border-radius: 8px;
+            font-size: 13px; color: #d1d2d6; display: none; white-space: pre-wrap; line-height: 1.5;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        
+        .tg-join-btn {
+            background: linear-gradient(90deg, #1d93d2 0%, #24A1DE 100%); color: white; text-decoration: none;
+            display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px;
+            border-radius: 12px; font-weight: 700; margin-top: 35px; font-size: 14px;
+        }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #fff;
+            color: #000; padding: 10px 24px; border-radius: 30px; font-weight: 800; font-size: 12px;
+            display: none; z-index: 1000; box-shadow: 0 10px 25px rgba(255,255,255,0.3); text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
@@ -197,10 +221,10 @@ HTML_TEMPLATE = """
         <div class="vip-subtitle">VIP Premium Temp Mail UI</div>
 
         <div class="profile-sec">
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=VIP" class="profile-img" id="userPhoto">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed={{ user_id }}" class="profile-img">
             <div class="profile-info">
-                <h4 id="userName">{{ name }}</h4>
-                <p id="userMeta">ID: {{ user_id }} | @{{ username }}</p>
+                <h4>{{ name }}</h4>
+                <p>ID: {{ user_id }} | @{{ username }}</p>
             </div>
         </div>
 
@@ -208,17 +232,17 @@ HTML_TEMPLATE = """
 
         <div class="mail-box" onclick="copyText('currentMail')">
             <span id="currentMail">Click Generate Button</span>
-            <span style="font-size: 11px; color: #888;">📋 COPY</span>
+            <span class="copy-badge">📋 COPY</span>
         </div>
         <div class="pass-box" onclick="copyText('currentPass')">
             <span id="currentPass">Password: speedx_******</span>
-            <span style="font-size: 11px; color: #888;">📋 COPY</span>
+            <span class="copy-badge">📋 COPY</span>
         </div>
     </div>
 
     <div class="inbox-title">📥 Live Inbox (Auto Refreshing)</div>
     <div class="email-list" id="emailList">
-        <p style="text-align: center; color: #555;">No mail active. Click generate to start receiving.</p>
+        <p style="text-align: center; color: #51535b; font-size: 13px;">No mail active. Click generate to poll server.</p>
     </div>
 
     <a href="https://t.me/{{ channel_username }}" target="_blank" class="tg-join-btn">✈️ Join Official Telegram Channel</a>
@@ -226,15 +250,13 @@ HTML_TEMPLATE = """
 <div class="toast" id="toast">Copied!</div>
 
 <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready(); tg.expand();
-
     let currentEmailUser = "";
     let currentEmailDomain = "";
     const userId = "{{ user_id }}";
 
-    // Inform backend of a web view log
-    fetch(`/api/log-visit?user_id=${userId}`);
+    if (userId !== "Unknown") {
+        fetch(`/api/log-visit?user_id=${userId}`);
+    }
 
     function generateNewMail() {
         fetch(`/api/gen-mail?user_id=${userId}`)
@@ -256,7 +278,7 @@ HTML_TEMPLATE = """
             .then(emails => {
                 const list = document.getElementById('emailList');
                 if (emails.length === 0) {
-                    list.innerHTML = '<p style="text-align: center; color: #666;">Inbox is empty. Awaiting verification messages...</p>';
+                    list.innerHTML = '<p style="text-align: center; color: #51535b; font-size: 13px;">Inbox is empty. Awaiting verification messages...</p>';
                     return;
                 }
                 list.innerHTML = "";
@@ -271,8 +293,8 @@ HTML_TEMPLATE = """
                         <div class="email-meta"><span class="email-sender">From: ${email.from}</span><span>${email.date}</span></div>
                         <div class="email-subject">📝 ${email.subject}</div>
                         <div class="email-body" id="body-${index}" onclick="event.stopPropagation();">
-                            <div style="text-align:right;"><button onclick="copyRawText(document.getElementById('text-${index}').innerText)" style="background:#222; color:var(--neon-blue); border:1px solid var(--neon-blue); border-radius:4px; padding:2px 6px; font-size:11px; cursor:pointer;">Copy Content</button></div>
-                            <span id="text-${index}">${email.textBody || email.htmlBody || 'No data'}</span>
+                            <div style="text-align:right; margin-bottom:8px;"><button onclick="copyRawText(document.getElementById('text-${index}').innerText)" style="background:#111; color:var(--neon-cyan); border:1px solid var(--neon-cyan); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; font-weight:bold;">Copy OTP</button></div>
+                            <span id="text-${index}">${email.textBody || email.htmlBody || 'No Content'}</span>
                         </div>`;
                     list.appendChild(item);
                 });
@@ -285,21 +307,21 @@ HTML_TEMPLATE = """
         copyRawText(text);
     }
     function copyRawText(text) {
-        navigator.clipboard.writeText(text).then(() => showToast("Copied to clipboard! 📋"));
+        navigator.clipboard.writeText(text).then(() => showToast("Copied! 📋"));
     }
     function showToast(msg) {
         const t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block';
-        setTimeout(() => t.style.display = 'none', 1800);
+        setTimeout(() => t.style.display = 'none', 1500);
     }
 
-    setInterval(fetchInbox, 2500); // Live high-frequency polling every 2.5s
+    setInterval(fetchInbox, 2500);
 
     particlesJS('particles-js', {
         "particles": {
-            "number": {"value": 45}, "color": {"value": "#ff0055"},
-            "shape": {"type": "circle"}, "opacity": {"value": 0.25}, "size": {"value": 3},
-            "line_linked": {"enable": true, "distance": 140, "color": "#00ffff", "opacity": 0.15, "width": 1},
-            "move": {"enable": true, "speed": 1.5}
+            "number": {"value": 40}, "color": {"value": "#ff0055"},
+            "shape": {"type": "circle"}, "opacity": {"value": 0.2}, "size": {"value": 2.5},
+            "line_linked": {"enable": true, "distance": 130, "color": "#00ffff", "opacity": 0.1, "width": 1},
+            "move": {"enable": true, "speed": 1.2}
         }
     });
 </script>
@@ -324,7 +346,7 @@ def log_visit():
 @app.route('/api/gen-mail')
 def gen_mail():
     uid = request.args.get('user_id')
-    if uid and int(uid) in USER_DB:
+    if uid and uid != "Unknown" and int(uid) in USER_DB:
         USER_DB[int(uid)]["mails_generated"] += 1
         
     domains = ["1secmail.com", "1secmail.org", "1secmail.net"]
@@ -354,24 +376,38 @@ def get_inbox():
     except:
         return jsonify([])
 
-# ================= RUNNER =================
+# ================= ASYNC RUNNER FOR BOTH BOT & FLASK =================
 
-def run_tg_bot():
-    # Build bot application using only the Token safely
+async def main():
+    # Build bot application natively inside async context
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Handlers
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("admin", admin_handler))
+
+    # Initialize bot polling inside the event loop safely
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+
+    # Configure and run Flask inside the exact same asyncio loop via custom background config
+    import werkzeug.serving
+    port = int(os.environ.get("PORT", 5000))
     
-    application.run_polling()
+    # Run server task concurrently using the main loop without thread-interruption
+    loop = asyncio.get_running_loop()
+    server_task = loop.run_in_executor(None, lambda: werkzeug.serving.run_simple("0.0.0.0", port, app, use_reloader=False))
+
+    print(f"🔥 VIP System Online! Web running on port {port}")
+    
+    # Keep checking and preventing the event loop from collapsing
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    except (KeyboardInterrupt, SystemExit):
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 if __name__ == "__main__":
-    # Start Telegram Bot thread
-    tg_thread = Thread(target=run_tg_bot)
-    tg_thread.daemon = True
-    tg_thread.start()
-
-    # Start Flask Web app
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # Launch with high priority pure asyncio core execution
+    asyncio.run(main())
